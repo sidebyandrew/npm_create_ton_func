@@ -1,0 +1,154 @@
+#include "imports/stdlib.fc";
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+
+}
+
+;; 方法可以主动返回 return ();
+() send_money(slice address, int amount) impure inline {
+    ;; 下面代码是构造了一个消息，消息包含目标地址address，
+    ;; 然后调用 send_raw_message 将消息发送到 TON 网络进行投递
+    ;; 其中的 store_coins 代表消息附带多少 Toncoin 出去
+    ;; 其中的 64 代表 绅士模式，将 inbound message 的剩余价值带走，并且包含“小费”amount，也会一并带走
+    ;; 因为没有设置 64+1 , 所以从消息中扣除发送的 gas
+    ;; 如果设置了 64+1 , 代表从发送合约的余额来扣除发送消息需要的 gas
+
+    var msg = begin_cell()
+        .store_uint(0x10,6);; 表示 nobounce ;; 0x10 是 十六进制，转为 10进制是 16. 长度 6
+        .store_slice(address) ;; slice 格式的 address
+        .store_coins(amount)
+        .end_cell();
+
+    send_raw_message(msg, 64);
+}
+
+() basic_syntax() {
+    int flag = 0; ;;0 is false
+    if(flag){
+    }else{
+    }
+
+    int number = 2;
+    int multiplier = number;
+    int degree = 5;
+    repeat(degree - 1){
+        number *= multiplier;
+    }
+}
+
+
+() while_loop_refs() {
+    cell inner_cell = begin_cell()
+        .store_uint(123,16).end_cell();
+
+    cell message = begin_cell()
+        .store_ref(inner_cell)
+        .store_ref(inner_cell)
+        .end_cell();
+
+    slice msgSliceParser = message.begin_parse();
+
+    while (msgSliceParser.slice_refs_empty?() != -1){ ;; -1 是表示 true 不为空， 0 表示 true 为空
+        cell inner_cell = msgSliceParser~load_ref();
+        ;; 迭代处理
+    }
+}
+
+() buildMsg1() {
+    slice addr = "EQUQxxx";
+    int amount = 1000000000; ;; 1 TON
+
+    int op = 0;
+    cell msg = begin_cell()
+        .store_uint(0x18,6)
+        .store_slice(addr)
+        .store_coins(amount)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)  ;;107
+        .store_uint(op,32)
+        .end_cell();
+
+    send_raw_message(msg, 1 + 2); ;; 1 分开支付费用， 2 忽略错误
+}
+
+;; How to contain a body as ref to an internal message cell
+;; 如何在 内部消息 中附带一个消息体(msg body)
+() buildMsg2() {
+    slice addr = "EQUQxxx";
+    int amount = 1000000000; ;; 1 TON
+    int op = 0;
+
+    cell message_body = begin_cell()
+        .store_uint(op,32)
+        .store_slice("🚀")
+        .end_cell();
+
+    cell msg = begin_cell()
+        .store_uint(0x18,6)
+        .store_slice(addr)
+        .store_coins(amount)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)  ;;107
+        .store_uint(1,1);; 设置位为 1，表明 cell 将继续传输
+        .store_ref(message_body)
+        .end_cell();
+
+    send_raw_message(msg, 1 + 2); ;; 1 分开支付费用， 2 忽略错误 .(从合约余额中支付佣金并忽略错误。)
+}
+
+(int) tlen(tuple t) asm "TLEN";
+forall X -> (tuple) to_tuple(X x) asm "NOP";
+
+
+() to_tuple_loop(){
+    tuple t = to_tuple([1,2,3,4,5]);
+    int len = t.tlen();
+
+    int i = 0;
+    while(i < len){
+        int x = t.at(i);
+        i = i + 1;
+    }
+
+
+}
+
+
+
+;; () send_raw_message(cell msg, int mode) impure asm "SENDRAWMSG";
+
+;;; Sends a raw message contained in msg,
+;; 发送一个合约内部消息，
+;;; which should contain a correctly serialized object Message X,
+;; 需要包含一个序列化的消息对象，具体来说就是处理成 cell
+;;; with the only exception that the source address is allowed to have dummy value addr_none
+;; 唯一的例外是，来源地址可以使用假的占位符变量 addr_none
+;;; (to be automatically replaced with the current smart contract address),
+;; (这个占位符将被自动替换为当前发送消息的合约地址)
+;;; and ihr_fee, fwd_fee, created_lt and created_at fields can have arbitrary values
+;; 并且 ihr_fee, fwd_fee, created_lt 和 created_at 自动可以填写任意字段
+;;; (to be rewritten with correct values during the action phase of the current transaction).
+;; (因为在执行阶段这几个变量会被重写)
+
+;;;;;;;;;;;;  Flags 说明  ==================================
+;;; Integer parameter mode contains the flags.
+;; 还有一个参数是整数类型的 flag
+;;; Currently mode = 0 is used for ordinary messages;
+;; mode = 0 是用于普通消息
+
+;;; mode = 128 is used for messages that are to carry all the remaining balance of the current smart contract
+;; mode = 128 是土匪标志，将把本合约余额都吸干
+;;; (instead of the value originally indicated in the message);
+;; (128 优先级高于消息中原始指定的 value)
+
+;;; mode = 64 is used for messages that carry all the remaining value of the inbound message in addition to the value initially indicated in the new message
+;; mode = 64 (二进制1000000)  是一个绅士模式，将剩余价值带走，当然如果发送时候给“小费”，也会一并带走
+;;; (if bit 0 is not set, the gas fees are deducted from this amount);
+;; 如果 第 0 位没有设置，gas fees 将从这个余额中扣除
+;;; mode' = mode + 1 means that the sender wants to pay transfer fees separately;
+;; 如果 mode' = mode + 1 （ 64+1 = 二进制1000001） 表示发送者付 gas fee
+;;; mode' = mode + 2 means that any errors arising while processing this message during the action phase should be ignored. Finally,
+;; 如果 mode' = mode + 2 （ 64+2 = 二进制1000010） 表示忽略 Action 阶段的异常
+;;; mode' = mode + 32 means that the current account must be destroyed if its resulting balance is zero.
+;; 如果 mode' = mode + 32 （ 64+32 = 二进制1100000） 表示忽略 Action 阶段的异常
+;;; This flag is usually employed together with +128.
+;; 这个 flag 通常和 128(10000000) 一起使用
+
