@@ -1,8 +1,15 @@
 #include "imports/stdlib.fc";
 
-const op::increase = "op::increase"c; ;; create an opcode from string using the "c" prefix, this results in 0x7e8764ef opcode in this case
+;; create an opcode from string using the "c" prefix, this results in 0x7e8764ef opcode in this case
+const op::increase = "op::increase"c;
 
 ;; storage variables
+
+;; ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+;; 因为合约的代码“不是常驻内存的”，只有在合约被调用时候，才被从外部存储(区块链)上加载(cell)
+;; 所以必须要有一对 set_data(cell), get_data():cell 方法来加载合约的持久化数据
+;; 其中合约的代码部分数据，是自动加载的
+;; ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
 
 ;; id is required to be able to create different instances of counters
 ;; since addresses in TON depend on the initial state of the contract
@@ -31,20 +38,25 @@ global int ctx_counter;
 
 ;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
 () recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
-    if (in_msg_body.slice_empty?()) { ;; ignore all empty messages
+    ;; ignore all empty messages
+    if (in_msg_body.slice_empty?()) {
         return ();
     }
 
+    ;; ignore all bounced messages
     slice cs = in_msg_full.begin_parse();
     int flags = cs~load_uint(4);
-    if (flags & 1) { ;; ignore all bounced messages
+    if (flags & 1) {
         return ();
     }
 
-    load_data(); ;; here we populate the storage variables
+    ;; here we populate the storage variables
+    load_data();
 
-    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
-    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+    ;; by convention, the first 32 bits of incoming message is the op
+    int op = in_msg_body~load_uint(32);
+    ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+    int query_id = in_msg_body~load_uint(64);
 
     if (op == op::increase) {
         int increase_by = in_msg_body~load_uint(32);

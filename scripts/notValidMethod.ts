@@ -1,0 +1,2 @@
+function notValidMethod() {}
+function run() {}
